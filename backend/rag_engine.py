@@ -252,19 +252,23 @@ def process_and_embed_book(book_id: str, filepath: str, book_name: str, chunk_si
 
 def retrieve_top_chunks(query: str, user_id: str, top_k: int = 5, filter_book_ids: List[str] = None) -> List[Dict[str, Any]]:
     """
-    Retrieves top_k relevant chunks from vector store using ChromaDB cosine similarity + keyword matching.
+    Retrieves top_k relevant chunks using vector similarity, keyword matching, and document fallback.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Fetch user's books that are Ready (or fallback to books with existing chunks)
-    if filter_book_ids:
+    # Fetch user's books (or fallback to all uploaded books if user_id filter yields none)
+    if filter_book_ids and len(filter_book_ids) > 0:
         placeholders = ','.join(['?'] * len(filter_book_ids))
-        cursor.execute(f"SELECT id, name FROM books WHERE user_id = ? AND id IN ({placeholders}) AND status != 'Error'", [user_id] + filter_book_ids)
+        cursor.execute(f"SELECT id, name FROM books WHERE id IN ({placeholders}) AND status != 'Error'", filter_book_ids)
+        books_rows = cursor.fetchall()
     else:
         cursor.execute("SELECT id, name FROM books WHERE user_id = ? AND status != 'Error'", (user_id,))
+        books_rows = cursor.fetchall()
+        if not books_rows:
+            cursor.execute("SELECT id, name FROM books WHERE status != 'Error'")
+            books_rows = cursor.fetchall()
     
-    books_rows = cursor.fetchall()
     conn.close()
 
     if not books_rows:
@@ -273,67 +277,74 @@ def retrieve_top_chunks(query: str, user_id: str, top_k: int = 5, filter_book_id
     book_id_to_name = {row["id"]: row["name"] for row in books_rows}
     user_book_ids = list(book_id_to_name.keys())
 
-    # Build query filter metadata for ChromaDB
-    if len(user_book_ids) == 1:
-        where_clause = {"book_id": user_book_ids[0]}
-    else:
-        where_clause = {"book_id": {"$in": user_book_ids}}
+    retrieved = []
 
+    # 1. ChromaDB Vector Similarity Search
     try:
-        # Fetch slightly more to filter/format and apply keyword boost ranking
+        where_clause = {"book_id": user_book_ids[0]} if len(user_book_ids) == 1 else {"book_id": {"$in": user_book_ids}}
         results = collection.query(
             query_texts=[query],
             n_results=min(top_k * 2, 20),
             where=where_clause
         )
+        if results and results.get("ids") and results["ids"][0]:
+            ids = results["ids"][0]
+            documents = results["documents"][0]
+            metadatas = results["metadatas"][0]
+            distances = results["distances"][0]
+
+            for idx in range(len(ids)):
+                chunk_id = ids[idx]
+                text = documents[idx]
+                meta = metadatas[idx]
+                similarity = 1.0 - distances[idx] if distances[idx] is not None else 0.0
+                book_id = meta["book_id"]
+                book_name = book_id_to_name.get(book_id, "Unknown Book")
+                retrieved.append({
+                    "chunk_id": chunk_id,
+                    "book_id": book_id,
+                    "book_name": book_name,
+                    "page_number": meta.get("page_number", 1),
+                    "chunk_index": meta.get("chunk_index", 1),
+                    "text": text,
+                    "score": similarity
+                })
     except Exception as e:
-        print(f"Error querying ChromaDB: {e}")
-        results = None
+        print(f"ChromaDB query info: {e}")
 
-    retrieved = []
-    query_lower = query.lower()
-    keywords = [w for w in re.findall(r'\w+', query_lower) if len(w) > 2]
+    # 2. SQLite Database Keyword Matching Fallback
+    query_words = [w for w in re.findall(r'\w+', query.lower()) if len(w) > 2]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    placeholders = ','.join(['?'] * len(user_book_ids))
 
-    if results and results.get("ids") and results["ids"][0]:
-        ids = results["ids"][0]
-        documents = results["documents"][0]
-        metadatas = results["metadatas"][0]
-        distances = results["distances"][0]
-
-        for idx in range(len(ids)):
-            chunk_id = ids[idx]
-            text = documents[idx]
-            meta = metadatas[idx]
-            similarity = 1.0 - distances[idx] if distances[idx] is not None else 0.0
-            
-            keyword_hits = sum(1 for kw in keywords if kw in text.lower())
-            keyword_score = keyword_hits / (len(keywords) or 1)
-
-            combined_score = 0.7 * similarity + 0.3 * keyword_score
-
-            book_id = meta["book_id"]
-            book_name = book_id_to_name.get(book_id, "Unknown Book")
-
-            retrieved.append({
-                "chunk_id": chunk_id,
-                "book_id": book_id,
-                "book_name": book_name,
-                "page_number": meta["page_number"],
-                "chunk_index": meta["chunk_index"],
-                "text": text,
-                "score": combined_score
-            })
-
-    # Direct SQLite DB text search fallback if ChromaDB returns no results
-    if not retrieved:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        for b_id in user_book_ids:
-            # Match keywords in chunks table
-            kw_pattern = f"%{keywords[0]}%" if keywords else f"%{query}%"
+    for word in (query_words or [query]):
+        try:
             cursor.execute(
-                "SELECT id, book_id, book_name, page_number, chunk_index, text FROM chunks WHERE book_id = ? AND text LIKE ? LIMIT ?",
-                (b_id, kw_pattern, top_k)
+                f"SELECT id, book_id, book_name, page_number, chunk_index, text FROM chunks WHERE book_id IN ({placeholders}) AND LOWER(text) LIKE ? LIMIT ?",
+                user_book_ids + [f"%{word.lower()}%", top_k]
+            )
+            rows = cursor.fetchall()
+            for r in rows:
+                if not any(c["chunk_id"] == r["id"] for c in retrieved):
+                    retrieved.append({
+                        "chunk_id": r["id"],
+                        "book_id": r["book_id"],
+                        "book_name": r["book_name"],
+                        "page_number": r["page_number"],
+                        "chunk_index": r["chunk_index"],
+                        "text": r["text"],
+                        "score": 0.85
+                    })
+        except Exception as e:
+            print(f"SQLite keyword search info: {e}")
+
+    # 3. Document Excerpt Fallback: If no keyword matched, return top excerpts from the uploaded books
+    if not retrieved:
+        try:
+            cursor.execute(
+                f"SELECT id, book_id, book_name, page_number, chunk_index, text FROM chunks WHERE book_id IN ({placeholders}) ORDER BY chunk_index ASC LIMIT ?",
+                user_book_ids + [top_k]
             )
             rows = cursor.fetchall()
             for r in rows:
@@ -344,10 +355,12 @@ def retrieve_top_chunks(query: str, user_id: str, top_k: int = 5, filter_book_id
                     "page_number": r["page_number"],
                     "chunk_index": r["chunk_index"],
                     "text": r["text"],
-                    "score": 0.85
+                    "score": 0.70
                 })
-        conn.close()
+        except Exception as e:
+            print(f"SQLite excerpt fallback info: {e}")
 
+    conn.close()
     retrieved.sort(key=lambda x: x["score"], reverse=True)
     return retrieved[:top_k]
 
