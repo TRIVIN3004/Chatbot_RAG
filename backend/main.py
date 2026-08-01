@@ -396,6 +396,22 @@ def get_book_file(book_id: str):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(row["filepath"], filename=row["filename"], media_type="application/pdf")
 
+@app.get("/api/books/{book_id}/page/{page_number}")
+def get_book_page_text(book_id: str, page_number: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT text, page_number, chunk_index FROM chunks WHERE book_id = ? AND page_number = ? ORDER BY chunk_index ASC",
+        (book_id, page_number)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return {
+        "book_id": book_id,
+        "page_number": page_number,
+        "chunks": [{"chunk_index": r["chunk_index"], "text": r["text"]} for r in rows]
+    }
+
 # CHAT & RAG SEARCH
 @app.post("/api/chat")
 def chat(req: ChatRequest):
