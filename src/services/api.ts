@@ -1,6 +1,13 @@
 import type { Book, Message, Conversation, Citation, AdminStats, AppSettings } from '../types';
+const getApiBase = () => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (envUrl) {
+    return envUrl.endsWith('/api') ? envUrl : `${envUrl.replace(/\/$/, '')}/api`;
+  }
+  return 'http://localhost:8000/api';
+};
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = getApiBase();
 
 // Initial sample books to provide an instant interactive experience if no backend uploaded books yet
 const DEFAULT_BOOKS: Book[] = [

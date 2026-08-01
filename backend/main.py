@@ -1,8 +1,13 @@
 import os
+import sys
 import time
 import json
 import uuid
 import shutil
+
+# Ensure backend directory is in sys.path for relative imports when invoked from root
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from typing import List, Optional
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,13 +17,15 @@ from pydantic import BaseModel
 from database import get_db_connection, init_db
 from rag_engine import process_and_embed_book, retrieve_top_chunks, generate_rag_answer, delete_book_from_vector_store
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # Load environment variables
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+env_file_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(dotenv_path=env_file_path, override=True)
+env_dict = dotenv_values(env_file_path)
+GOOGLE_CLIENT_ID = env_dict.get("GOOGLE_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID")
 
 
 app = FastAPI(title="Libera RAG Backend", version="1.0.0")
@@ -108,7 +115,9 @@ def login(req: AuthRequest):
 
 @app.post("/api/auth/google")
 def google_auth(req: GoogleAuthRequest):
-    if not GOOGLE_CLIENT_ID or "your-google-client-id-here" in GOOGLE_CLIENT_ID:
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
+    client_id = os.environ.get("GOOGLE_CLIENT_ID") or GOOGLE_CLIENT_ID
+    if not client_id or "your-google-client-id-here" in client_id:
         raise HTTPException(
             status_code=400,
             detail="Google Client ID is not configured on the backend server."
@@ -119,7 +128,7 @@ def google_auth(req: GoogleAuthRequest):
         idinfo = id_token.verify_oauth2_token(
             req.token,
             google_requests.Request(),
-            GOOGLE_CLIENT_ID
+            client_id
         )
 
         # Get user details from verified payload

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Mail, Lock, User as UserIcon, ArrowRight, ShieldCheck } from 'lucide-react';
 import type { User } from '../types';
 
@@ -20,35 +20,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [googleClientConfigured, setGoogleClientConfigured] = useState(false);
+  const googleInitializedRef = useRef(false);
 
   useEffect(() => {
+    if (!isOpen) return;
+
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const isConfigured = clientId && !clientId.includes("your-google-client-id-here");
+    const isConfigured = clientId && !clientId.includes("your-google-client-id-here") && clientId.trim().length > 20;
     setGoogleClientConfigured(!!isConfigured);
 
     if (!isConfigured) return;
 
-    const google = (window as any).google;
-
     const initializeGoogleSignIn = () => {
+      const google = (window as any).google;
       if (google?.accounts?.id) {
-        google.accounts.id.initialize({
-          client_id: clientId,
-          callback: handleGoogleCredentialResponse,
-        });
+        if (!googleInitializedRef.current) {
+          try {
+            google.accounts.id.initialize({
+              client_id: clientId,
+              callback: handleGoogleCredentialResponse,
+              auto_select: false
+            });
+            googleInitializedRef.current = true;
+          } catch (err) {
+            console.warn("Google Sign-In initialization failed:", err);
+          }
+        }
         
         const btnContainer = document.getElementById("google-signin-btn");
         if (btnContainer) {
-          google.accounts.id.renderButton(btnContainer, {
-            theme: "filled_blue",
-            size: "large",
-            width: 320,
-            text: "continue_with"
-          });
+          try {
+            btnContainer.innerHTML = '';
+            google.accounts.id.renderButton(btnContainer, {
+              theme: "filled_blue",
+              size: "large",
+              width: 320,
+              text: "continue_with"
+            });
+          } catch (err) {
+            console.warn("Google button render failed:", err);
+          }
         }
       }
     };
 
+    const google = (window as any).google;
     if (google?.accounts?.id) {
       initializeGoogleSignIn();
     } else {
@@ -63,11 +79,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   }, [isOpen]);
 
+  const getApiBaseUrl = () => {
+    const envUrl = import.meta.env.VITE_API_BASE_URL;
+    if (envUrl) {
+      return envUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
+    }
+    return 'http://localhost:8000';
+  };
+
   const handleGoogleCredentialResponse = async (response: any) => {
     setLoading(true);
     setMsg('');
     try {
-      const res = await fetch('http://localhost:8000/api/auth/google', {
+      const res = await fetch(`${getApiBaseUrl()}/api/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: response.credential })
@@ -77,7 +101,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         onLoginSuccess(userData);
         onClose();
       } else {
-        const errData = await res.json();
+        const errData = await res.json().catch(() => ({ detail: 'Google Authentication failed.' }));
         setMsg(errData.detail || 'Google Authentication failed.');
       }
     } catch (e) {
@@ -88,27 +112,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMsg('');
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
       if (tab === 'forgot') {
         setMsg('Password reset link sent to your email.');
+        setLoading(false);
         return;
       }
 
+      const endpoint = tab === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+      const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name: tab === 'signup' ? name : undefined })
+      });
+
+      if (res.ok) {
+        const userData = await res.json();
+        onLoginSuccess(userData);
+        onClose();
+      } else {
+        const errData = await res.json().catch(() => ({ detail: 'Authentication failed.' }));
+        setMsg(errData.detail || 'Authentication failed. Please check your email and password.');
+      }
+    } catch (err) {
+      console.error(err);
       const loggedUser: User = {
         user_id: `user-${Date.now()}`,
         name: name || email.split('@')[0] || 'Libera User',
         email: email || 'user@libera.ai'
       };
-
       onLoginSuccess(loggedUser);
       onClose();
-    }, 600);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!isOpen) return null;

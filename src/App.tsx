@@ -237,14 +237,16 @@ Rules:
   return (
     <div className={`h-screen w-screen bg-[#0F172A] text-slate-100 overflow-hidden font-sans ${view === 'landing' ? 'overflow-y-auto' : 'flex'}`}>
       {view === 'landing' ? (
-        <LandingPage
-          onGetStarted={() => setView('dashboard')}
-          onUploadClick={() => {
-            setView('dashboard');
-            setIsBooksModalOpen(true);
-          }}
-          onLoginClick={() => setIsAuthOpen(true)}
-        />
+        <div className="w-full h-full overflow-y-auto">
+          <LandingPage
+            onGetStarted={() => setView('dashboard')}
+            onUploadClick={() => {
+              setView('dashboard');
+              setIsBooksModalOpen(true);
+            }}
+            onLoginClick={() => setIsAuthOpen(true)}
+          />
+        </div>
       ) : (
         <div className="flex w-full h-full">
           {/* Collapsible Sidebar */}

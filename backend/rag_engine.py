@@ -1,10 +1,15 @@
 import os
+import sys
 import re
 import json
 import math
 import uuid
 import time
 from typing import List, Dict, Any, Tuple
+
+# Ensure backend directory is in sys.path for relative imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 try:
     from pypdf import PdfReader
     HAS_PYPDF = True
@@ -166,52 +171,64 @@ def process_and_embed_book(book_id: str, filepath: str, book_name: str, chunk_si
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Update status to Processing
-    cursor.execute("UPDATE books SET status = 'Processing' WHERE id = ?", (book_id,))
-    conn.commit()
+    try:
+        # Update status to Processing
+        cursor.execute("UPDATE books SET status = 'Processing' WHERE id = ?", (book_id,))
+        conn.commit()
 
-    pages = extract_text_from_pdf(filepath)
-    page_count = len(pages)
+        pages = extract_text_from_pdf(filepath)
+        page_count = len(pages)
 
-    # Update status to Embedding & update page count
-    cursor.execute("UPDATE books SET pages = ?, status = 'Embedding' WHERE id = ?", (page_count, book_id))
-    conn.commit()
+        # Update status to Embedding & update page count
+        cursor.execute("UPDATE books SET pages = ?, status = 'Embedding' WHERE id = ?", (page_count, book_id))
+        conn.commit()
 
-    chunks = chunk_pages(pages, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        chunks = chunk_pages(pages, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
-    # Delete any previous chunks for this book from SQLite and ChromaDB
-    cursor.execute("DELETE FROM chunks WHERE book_id = ?", (book_id,))
-    delete_book_from_vector_store(book_id)
+        # Delete any previous chunks for this book from SQLite and ChromaDB
+        cursor.execute("DELETE FROM chunks WHERE book_id = ?", (book_id,))
+        delete_book_from_vector_store(book_id)
 
-    ids = []
-    documents = []
-    metadatas = []
+        ids = []
+        documents = []
+        metadatas = []
 
-    for c in chunks:
-        chunk_id = f"{book_id}_chunk_{c['chunk_index']}"
-        cursor.execute(
-            "INSERT INTO chunks (id, book_id, book_name, page_number, chunk_index, text, vector_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (chunk_id, book_id, book_name, c["page_number"], c["chunk_index"], c["text"], None)
-        )
-        ids.append(chunk_id)
-        documents.append(c["text"])
-        metadatas.append({
-            "book_id": book_id,
-            "page_number": c["page_number"],
-            "chunk_index": c["chunk_index"]
-        })
+        for c in chunks:
+            chunk_id = f"{book_id}_chunk_{c['chunk_index']}"
+            cursor.execute(
+                "INSERT INTO chunks (id, book_id, book_name, page_number, chunk_index, text, vector_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (chunk_id, book_id, book_name, c["page_number"], c["chunk_index"], c["text"], None)
+            )
+            ids.append(chunk_id)
+            documents.append(c["text"])
+            metadatas.append({
+                "book_id": book_id,
+                "page_number": c["page_number"],
+                "chunk_index": c["chunk_index"]
+            })
 
-    if ids:
-        collection.add(
-            ids=ids,
-            documents=documents,
-            metadatas=metadatas
-        )
+        if ids:
+            collection.add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas
+            )
 
-    # Mark as Ready
-    cursor.execute("UPDATE books SET status = 'Ready' WHERE id = ?", (book_id,))
-    conn.commit()
-    conn.close()
+        # Mark as Ready
+        cursor.execute("UPDATE books SET status = 'Ready' WHERE id = ?", (book_id,))
+        conn.commit()
+        print(f"Successfully processed and embedded book '{book_name}' ({book_id}) with {len(chunks)} chunks across {page_count} pages.")
+    except Exception as e:
+        print(f"Error processing book '{book_name}' ({book_id}): {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            cursor.execute("UPDATE books SET status = 'Error' WHERE id = ?", (book_id,))
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
 
 def retrieve_top_chunks(query: str, user_id: str, top_k: int = 5, filter_book_ids: List[str] = None) -> List[Dict[str, Any]]:
     """
@@ -220,12 +237,12 @@ def retrieve_top_chunks(query: str, user_id: str, top_k: int = 5, filter_book_id
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Fetch user's ready books
+    # Fetch user's books that are Ready (or fallback to books with existing chunks)
     if filter_book_ids:
         placeholders = ','.join(['?'] * len(filter_book_ids))
-        cursor.execute(f"SELECT id, name FROM books WHERE user_id = ? AND id IN ({placeholders}) AND status = 'Ready'", [user_id] + filter_book_ids)
+        cursor.execute(f"SELECT id, name FROM books WHERE user_id = ? AND id IN ({placeholders}) AND status != 'Error'", [user_id] + filter_book_ids)
     else:
-        cursor.execute("SELECT id, name FROM books WHERE user_id = ? AND status = 'Ready'", (user_id,))
+        cursor.execute("SELECT id, name FROM books WHERE user_id = ? AND status != 'Error'", (user_id,))
     
     books_rows = cursor.fetchall()
     conn.close()
@@ -309,10 +326,10 @@ def generate_rag_answer(
     if not retrieved_chunks:
         return ("I couldn't find this information in the uploaded books.", [])
 
-    # Filter out very low relevance noise
-    relevant_chunks = [c for c in retrieved_chunks if c["score"] >= 0.08]
+    # Use retrieved chunks, prioritizing high relevance chunks
+    relevant_chunks = [c for c in retrieved_chunks if c["score"] >= 0.05]
     if not relevant_chunks:
-        return ("I couldn't find this information in the uploaded books.", [])
+        relevant_chunks = retrieved_chunks
 
     citations = []
     seen_sources = set()
@@ -373,9 +390,9 @@ def generate_rag_answer(
         f"======================\n"
         f"{context_str}\n"
         f"======================\n\n"
-        f"User Question: {query}\n\n"
-        f"Instruction: Answer the user's question accurately based ONLY on the context provided above. "
-        f"Do not guess or use outside knowledge. Cite the source book name and page number in your response."
+        f"User Query / Topic: {query}\n\n"
+        f"Instruction: Based on the retrieved document context above, provide a clear, informative, and detailed answer or explanation about '{query}'. "
+        f"Synthesize the relevant information from the excerpts above, citing the book title and page number for each point."
     )
 
     payload = {

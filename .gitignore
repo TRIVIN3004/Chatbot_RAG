@@ -35,4 +35,10 @@ __pycache__/
 # Local Databases / Vector Stores
 backend/chroma_db/
 backend/libera.db
+backend/uploads/
+
+# Hugging Face Space clone
+hf_space/
+
+
 
