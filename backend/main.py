@@ -10,7 +10,16 @@ from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
 from database import get_db_connection, init_db
-from rag_engine import process_and_embed_book, retrieve_top_chunks, generate_rag_answer
+from rag_engine import process_and_embed_book, retrieve_top_chunks, generate_rag_answer, delete_book_from_vector_store
+
+from dotenv import load_dotenv
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+
+# Load environment variables
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+
 
 app = FastAPI(title="Libera RAG Backend", version="1.0.0")
 
@@ -48,6 +57,10 @@ class AuthRequest(BaseModel):
     name: Optional[str] = None
     email: str
     password: str
+
+class GoogleAuthRequest(BaseModel):
+    token: str
+
 
 # Book Cover Colors helper
 COVER_COLORS = [
@@ -93,7 +106,153 @@ def login(req: AuthRequest):
         return {"user_id": "demo-user", "name": "Libera User", "email": req.email}
     return {"user_id": row["id"], "name": row["name"], "email": row["email"]}
 
+@app.post("/api/auth/google")
+def google_auth(req: GoogleAuthRequest):
+    if not GOOGLE_CLIENT_ID or "your-google-client-id-here" in GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="Google Client ID is not configured on the backend server."
+        )
+
+    try:
+        # Verify the Google OAuth token ID
+        idinfo = id_token.verify_oauth2_token(
+            req.token,
+            google_requests.Request(),
+            GOOGLE_CLIENT_ID
+        )
+
+        # Get user details from verified payload
+        email = idinfo.get("email")
+        name = idinfo.get("name", email.split("@")[0] if email else "Google User")
+        google_user_id = f"google-{idinfo.get('sub')}"
+
+        if not email:
+            raise HTTPException(status_code=400, detail="Google authentication did not return an email address.")
+
+        # Check if user already exists, or create a new one in SQLite database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, email FROM users WHERE email = ?", (email,))
+        user_row = cursor.fetchone()
+
+        if user_row:
+            user_id = user_row["id"]
+            user_name = user_row["name"]
+        else:
+            user_id = google_user_id
+            user_name = name
+            cursor.execute(
+                "INSERT INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, user_name, email, "google-oauth-managed-password-hash", time.time())
+            )
+            conn.commit()
+            
+        conn.close()
+        return {"user_id": user_id, "name": user_name, "email": email}
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Google Token: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Google authentication error: {str(e)}")
+
+
+# SETTINGS ENDPOINTS
+class SettingsSchema(BaseModel):
+    theme: str
+    language: str
+    embeddingModel: str
+    chunkSize: int
+    chunkOverlap: int
+    llmModel: str
+    vectorDb: str
+    apiKey: str
+    systemPrompt: str
+
+@app.get("/api/settings")
+def get_settings(user_id: str = "demo-user"):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT theme, language, embedding_model, chunk_size, chunk_overlap, 
+                  llm_model, vector_db, api_key, system_prompt 
+           FROM settings WHERE user_id = ?""",
+        (user_id,)
+    )
+    row = cursor.fetchone()
+    
+    if not row:
+        # Default settings insert
+        default_system_prompt = (
+            "You are Libera, an AI assistant that answers questions exclusively from the user's uploaded documents.\n"
+            "Rules:\n"
+            "1. Use only the retrieved document context.\n"
+            "2. Never use outside knowledge.\n"
+            "3. If the answer is not found in the uploaded books, reply: \"I couldn't find this information in the uploaded books.\"\n"
+            "4. Cite every answer with the book name and page number."
+        )
+        cursor.execute(
+            """INSERT INTO settings (user_id, theme, language, embedding_model, chunk_size, chunk_overlap, llm_model, vector_db, api_key, system_prompt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, "light", "en", "BAAI/bge-small-en-v1.5", 800, 150, "llama-3.3-70b-versatile", "ChromaDB", "", default_system_prompt)
+        )
+        conn.commit()
+        
+        # Query again to get the inserted row
+        cursor.execute(
+            """SELECT theme, language, embedding_model, chunk_size, chunk_overlap, 
+                      llm_model, vector_db, api_key, system_prompt 
+               FROM settings WHERE user_id = ?""",
+            (user_id,)
+        )
+        row = cursor.fetchone()
+        
+    conn.close()
+    
+    return {
+        "theme": row["theme"],
+        "language": row["language"],
+        "embeddingModel": row["embedding_model"],
+        "chunkSize": row["chunk_size"],
+        "chunkOverlap": row["chunk_overlap"],
+        "llmModel": row["llm_model"],
+        "vectorDb": row["vector_db"],
+        "apiKey": row["api_key"],
+        "systemPrompt": row["system_prompt"]
+    }
+
+@app.put("/api/settings")
+def update_settings(req: SettingsSchema, user_id: str = "demo-user"):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Check if row exists, if not we do insert, else update
+    cursor.execute("SELECT user_id FROM settings WHERE user_id = ?", (user_id,))
+    exists = cursor.fetchone()
+    
+    if exists:
+        cursor.execute(
+            """UPDATE settings 
+               SET theme = ?, language = ?, embedding_model = ?, chunk_size = ?, chunk_overlap = ?, 
+                   llm_model = ?, vector_db = ?, api_key = ?, system_prompt = ?
+               WHERE user_id = ?""",
+            (req.theme, req.language, req.embeddingModel, req.chunkSize, req.chunkOverlap,
+             req.llmModel, req.vectorDb, req.apiKey, req.systemPrompt, user_id)
+        )
+    else:
+        cursor.execute(
+            """INSERT INTO settings (user_id, theme, language, embedding_model, chunk_size, chunk_overlap, llm_model, vector_db, api_key, system_prompt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, req.theme, req.language, req.embeddingModel, req.chunkSize, req.chunkOverlap, req.llmModel, req.vectorDb, req.apiKey, req.systemPrompt)
+        )
+        
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
 # UPLOAD & BOOK MANAGEMENT
+
 @app.post("/api/upload")
 async def upload_book(
     background_tasks: BackgroundTasks,
@@ -180,6 +339,7 @@ def delete_book(book_id: str, user_id: str = "demo-user"):
             pass
     cursor.execute("DELETE FROM books WHERE id = ?", (book_id,))
     cursor.execute("DELETE FROM chunks WHERE book_id = ?", (book_id,))
+    delete_book_from_vector_store(book_id)
     conn.commit()
     conn.close()
     return {"success": True, "message": "Book deleted successfully."}
@@ -247,7 +407,32 @@ def chat(req: ChatRequest):
 
     # Retrieve chunks
     chunks = retrieve_top_chunks(req.query, user_id=req.user_id, top_k=5, filter_book_ids=req.selected_book_ids)
-    answer, citations = generate_rag_answer(req.query, chunks)
+    
+    # Retrieve user settings
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT llm_model, api_key, system_prompt FROM settings WHERE user_id = ?",
+        (req.user_id,)
+    )
+    settings_row = cursor.fetchone()
+    conn.close()
+
+    system_prompt = None
+    llm_model = None
+    api_key = None
+    if settings_row:
+        system_prompt = settings_row["system_prompt"]
+        llm_model = settings_row["llm_model"]
+        api_key = settings_row["api_key"]
+
+    answer, citations = generate_rag_answer(
+        req.query,
+        chunks,
+        system_prompt=system_prompt,
+        llm_model=llm_model,
+        api_key=api_key
+    )
 
     # Save AI message
     ai_msg_id = str(uuid.uuid4())

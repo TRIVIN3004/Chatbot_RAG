@@ -12,7 +12,7 @@ import { AdminModal } from './components/AdminModal';
 import type { Book, Conversation, Message, User, AppSettings } from './types';
 import { 
   fetchBooks, uploadBookFile, deleteBookApi, renameBookApi, 
-  fetchHistory, sendChatMessage 
+  fetchHistory, sendChatMessage, fetchSettings, saveSettingsApi
 } from './services/api';
 
 export function App() {
@@ -48,7 +48,7 @@ export function App() {
     embeddingModel: 'BAAI/bge-small-en-v1.5',
     chunkSize: 800,
     chunkOverlap: 150,
-    llmModel: 'GPT-4.1 / GPT-5 Compatible',
+    llmModel: 'llama-3.3-70b-versatile',
     vectorDb: 'ChromaDB',
     apiKey: '',
     systemPrompt: `You are Libera, an AI assistant that answers questions exclusively from the user's uploaded documents.
@@ -59,16 +59,19 @@ Rules:
 4. Cite every answer with the book name and page number.`
   });
 
-  // Load initial Books & History
+  // Load initial Books, History & Settings
   useEffect(() => {
-    fetchBooks().then(setBooks);
-    fetchHistory().then(convs => {
+    fetchBooks(user?.user_id).then(setBooks);
+    fetchSettings(user?.user_id).then(setSettings);
+    fetchHistory(user?.user_id).then(convs => {
       setConversations(convs);
       if (convs.length > 0) {
         setActiveConvId(convs[0].id);
+      } else {
+        setActiveConvId(null);
       }
     });
-  }, []);
+  }, [user?.user_id]);
 
   // Theme Toggler effect
   useEffect(() => {
@@ -329,7 +332,10 @@ Rules:
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
-        onSaveSettings={setSettings}
+        onSaveSettings={async (newSettings) => {
+          await saveSettingsApi(newSettings, user?.user_id);
+          setSettings(newSettings);
+        }}
         onClearHistory={() => setConversations([])}
         onClearBooks={() => setBooks([])}
       />

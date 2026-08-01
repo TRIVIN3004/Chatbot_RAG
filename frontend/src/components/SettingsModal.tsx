@@ -132,8 +132,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onChange={(e) => setFormData({ ...formData, llmModel: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white"
                 >
-                  <option value="GPT-4.1 / GPT-5 Compatible">OpenAI GPT-4.1 / GPT-5 Compatible API</option>
-                  <option value="Local Llama 3.1 8B">Local Llama 3.1 8B</option>
+                  <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Versatile)</option>
+                  <option value="llama-3.1-8b-instant">Llama 3.1 8B (Fast)</option>
+                  <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                  <option value="gemma2-9b-it">Gemma 2 9B</option>
                 </select>
               </div>
 

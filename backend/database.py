@@ -90,7 +90,7 @@ def init_db():
             embedding_model TEXT DEFAULT 'BAAI/bge-small-en-v1.5',
             chunk_size INTEGER DEFAULT 800,
             chunk_overlap INTEGER DEFAULT 150,
-            llm_model TEXT DEFAULT 'GPT-4.1 / Llama 3.1',
+            llm_model TEXT DEFAULT 'llama-3.3-70b-versatile',
             vector_db TEXT DEFAULT 'ChromaDB',
             api_key TEXT DEFAULT '',
             system_prompt TEXT DEFAULT ''

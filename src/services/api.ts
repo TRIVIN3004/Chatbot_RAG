@@ -355,3 +355,56 @@ export async function fetchAdminStats(): Promise<AdminStats> {
     server_uptime: '99.98%'
   };
 }
+
+export async function fetchSettings(userId: string = 'demo-user'): Promise<AppSettings> {
+  try {
+    const res = await fetch(`${API_BASE}/settings?user_id=${userId}`);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {}
+
+  // Fallback to localStorage if backend is down
+  const stored = localStorage.getItem(`libera_settings_${userId}`);
+  if (stored) {
+    try { return JSON.parse(stored); } catch (e) {}
+  }
+
+  // Default fallback settings
+  const defaultSettings: AppSettings = {
+    theme: 'light',
+    language: 'en',
+    embeddingModel: 'BAAI/bge-small-en-v1.5',
+    chunkSize: 800,
+    chunkOverlap: 150,
+    llmModel: 'llama-3.3-70b-versatile',
+    vectorDb: 'ChromaDB',
+    apiKey: '',
+    systemPrompt: `You are Libera, an AI assistant that answers questions exclusively from the user's uploaded documents.
+Rules:
+1. Use only the retrieved document context.
+2. Never use outside knowledge.
+3. If the answer is not found in the uploaded books, reply: "I couldn't find this information in the uploaded books."
+4. Cite every answer with the book name and page number.`
+  };
+  localStorage.setItem(`libera_settings_${userId}`, JSON.stringify(defaultSettings));
+  return defaultSettings;
+}
+
+export async function saveSettingsApi(settings: AppSettings, userId: string = 'demo-user'): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/settings?user_id=${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    if (res.ok) {
+      localStorage.setItem(`libera_settings_${userId}`, JSON.stringify(settings));
+      return true;
+    }
+  } catch (e) {}
+
+  localStorage.setItem(`libera_settings_${userId}`, JSON.stringify(settings));
+  return true;
+}
+

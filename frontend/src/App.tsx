@@ -48,7 +48,7 @@ export function App() {
     embeddingModel: 'BAAI/bge-small-en-v1.5',
     chunkSize: 800,
     chunkOverlap: 150,
-    llmModel: 'GPT-4.1 / GPT-5 Compatible',
+    llmModel: 'llama-3.3-70b-versatile',
     vectorDb: 'ChromaDB',
     apiKey: '',
     systemPrompt: `You are Libera, an AI assistant that answers questions exclusively from the user's uploaded documents.
