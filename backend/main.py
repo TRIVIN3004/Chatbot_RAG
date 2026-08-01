@@ -394,7 +394,7 @@ def get_book_file(book_id: str):
     conn.close()
     if not row or not os.path.exists(row["filepath"]):
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(row["filepath"], filename=row["filename"])
+    return FileResponse(row["filepath"], filename=row["filename"], media_type="application/pdf")
 
 # CHAT & RAG SEARCH
 @app.post("/api/chat")
