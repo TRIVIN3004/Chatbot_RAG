@@ -230,7 +230,7 @@ Rules:
   const currentMessages = activeConv ? activeConv.messages : [];
 
   return (
-    <div className="flex h-screen w-screen bg-[#0F172A] text-slate-100 overflow-hidden font-sans">
+    <div className={`h-screen w-screen bg-[#0F172A] text-slate-100 overflow-hidden font-sans ${view === 'landing' ? 'overflow-y-auto' : 'flex'}`}>
       {view === 'landing' ? (
         <LandingPage
           onGetStarted={() => setView('dashboard')}
