@@ -22,27 +22,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMsg('');
 
-    setTimeout(() => {
-      setLoading(false);
-      if (tab === 'forgot') {
+    if (tab === 'forgot') {
+      setTimeout(() => {
+        setLoading(false);
         setMsg('Password reset link sent to your email.');
-        return;
+      }, 600);
+      return;
+    }
+
+    try {
+      const endpoint = tab === 'login' ? 'login' : 'signup';
+      const body: any = {
+        email,
+        password
+      };
+      if (tab === 'signup') {
+        body.name = name;
       }
 
-      const loggedUser: User = {
-        user_id: `user-${Date.now()}`,
-        name: name || email.split('@')[0] || 'Libera User',
-        email: email || 'user@libera.ai'
-      };
+      const res = await fetch(`http://localhost:8000/api/auth/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
 
-      onLoginSuccess(loggedUser);
-      onClose();
-    }, 600);
+      if (res.ok) {
+        const userData = await res.json();
+        onLoginSuccess(userData);
+        onClose();
+      } else {
+        const errData = await res.json();
+        setMsg(errData.detail || `${tab === 'login' ? 'Login' : 'Signup'} failed.`);
+      }
+    } catch (e) {
+      console.error(e);
+      setMsg('Failed to contact authentication server.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGoogleLogin = () => {

@@ -79,6 +79,27 @@ Rules:
     }
   }, [settings.theme]);
 
+  // Simple Hash-based Router for Back/Forward Navigation
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash === '#dashboard') {
+        setView('dashboard');
+      } else {
+        setView('landing');
+      }
+    };
+
+    handleHashChange(); // Sync initial mount hash state
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const navigateTo = (newView: 'landing' | 'dashboard') => {
+    window.location.hash = newView === 'dashboard' ? '#dashboard' : '#';
+  };
+
   // Upload Book
   const handleUploadFile = async (file: File) => {
     const uploaded = await uploadBookFile(file, user?.user_id);
@@ -226,6 +247,11 @@ Rules:
     link.click();
   };
 
+  const handleLogout = () => {
+    setUser(null);
+    navigateTo('landing');
+  };
+
   const activeConv = conversations.find(c => c.id === activeConvId);
   const currentMessages = activeConv ? activeConv.messages : [];
 
@@ -233,9 +259,11 @@ Rules:
     <div className={`h-screen w-screen bg-[#0F172A] text-slate-100 overflow-hidden font-sans ${view === 'landing' ? 'overflow-y-auto' : 'flex'}`}>
       {view === 'landing' ? (
         <LandingPage
-          onGetStarted={() => setView('dashboard')}
+          user={user}
+          onLogout={handleLogout}
+          onGetStarted={() => navigateTo('dashboard')}
           onUploadClick={() => {
-            setView('dashboard');
+            navigateTo('dashboard');
             setIsBooksModalOpen(true);
           }}
           onLoginClick={() => setIsAuthOpen(true)}
@@ -268,10 +296,11 @@ Rules:
               onQuickUpload={() => setIsBooksModalOpen(true)}
               theme={settings.theme}
               onToggleTheme={() => setSettings(s => ({ ...s, theme: s.theme === 'dark' ? 'light' : 'dark' }))}
-              onGoLanding={() => setView('landing')}
+              onGoLanding={() => navigateTo('landing')}
               onOpenAuth={() => setIsAuthOpen(true)}
               globalSearch={globalSearch}
               onGlobalSearchChange={setGlobalSearch}
+              onLogout={handleLogout}
             />
 
             <ChatArea
@@ -298,7 +327,10 @@ Rules:
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
-        onLoginSuccess={(u) => setUser(u)}
+        onLoginSuccess={(u) => {
+          setUser(u);
+          navigateTo('dashboard');
+        }}
       />
 
       <BookManagementModal

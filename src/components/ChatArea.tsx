@@ -6,6 +6,7 @@ import {
   FileText, ShieldCheck, Layers, HelpCircle
 } from 'lucide-react';
 import type { Message, Citation, Book } from '../types';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ChatAreaProps {
   messages: Message[];
@@ -139,8 +140,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 </div>
 
                 {/* Message Body Content */}
-                <div className="text-sm leading-relaxed whitespace-pre-wrap font-sans">
-                  {msg.text}
+                <div className="text-sm leading-relaxed font-sans">
+                  {msg.sender === 'ai' ? (
+                    <MarkdownRenderer content={msg.text} />
+                  ) : (
+                    <div className="whitespace-pre-wrap">{msg.text}</div>
+                  )}
                 </div>
 
                 {/* Source Citations Section */}

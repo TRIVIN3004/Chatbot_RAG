@@ -17,6 +17,7 @@ interface NavbarProps {
   onOpenAuth: () => void;
   globalSearch: string;
   onGlobalSearchChange: (q: string) => void;
+  onLogout: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -30,7 +31,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onGoLanding,
   onOpenAuth,
   globalSearch,
-  onGlobalSearchChange
+  onGlobalSearchChange,
+  onLogout
 }) => {
   return (
     <header className="h-16 px-6 bg-[#0B1120]/90 border-b border-slate-800/80 backdrop-blur-md flex items-center justify-between gap-4 z-20">
@@ -91,11 +93,21 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
 
         {user ? (
-          <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
+          <div className="flex items-center gap-2.5 pl-2 border-l border-slate-800">
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#5B5FFF] to-[#38BDF8] flex items-center justify-center text-white text-xs font-bold shadow-sm">
               {user.name.charAt(0).toUpperCase()}
             </div>
-            <span className="text-xs font-medium text-slate-200 hidden lg:inline">{user.name}</span>
+            <div className="flex flex-col hidden lg:flex">
+              <span className="text-xs font-semibold text-slate-200 leading-none">{user.name}</span>
+              <span className="text-[10px] text-slate-400 leading-none mt-0.5">{user.email}</span>
+            </div>
+            <button
+              onClick={onLogout}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800/60 transition-colors"
+              title="Log Out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         ) : (
           <button

@@ -1,5 +1,6 @@
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import time
 import json
 import uuid
@@ -105,13 +106,21 @@ def signup(req: AuthRequest):
 def login(req: AuthRequest):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, email FROM users WHERE email = ? AND password_hash = ?", (req.email, req.password))
+    cursor.execute("SELECT id, name, email, password_hash FROM users WHERE email = ?", (req.email,))
     row = cursor.fetchone()
+    if row:
+        if row["password_hash"] == req.password:
+            conn.close()
+            return {"user_id": row["id"], "name": row["name"], "email": row["email"]}
+        else:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Incorrect password.")
+    
     conn.close()
-    if not row:
-        # Fallback demo login for easy access
+    if req.email == "scholar@libera.ai" or req.email == "user@libera.ai":
         return {"user_id": "demo-user", "name": "Libera User", "email": req.email}
-    return {"user_id": row["id"], "name": row["name"], "email": row["email"]}
+        
+    raise HTTPException(status_code=400, detail="Account not found. Please Sign Up first.")
 
 @app.post("/api/auth/google")
 def google_auth(req: GoogleAuthRequest):

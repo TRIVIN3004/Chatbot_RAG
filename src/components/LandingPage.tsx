@@ -3,16 +3,21 @@ import { motion } from 'framer-motion';
 import { 
   BookOpen, Sparkles, UploadCloud, Search, ShieldCheck, 
   FileText, Database, Layers, ArrowRight, CheckCircle2, 
-  Code2, MessageSquare, Terminal, Zap, BookMarked
+  Code2, MessageSquare, Terminal, Zap, BookMarked, LogOut
 } from 'lucide-react';
+import type { User } from '../types';
 
 interface LandingPageProps {
+  user: User | null;
+  onLogout: () => void;
   onGetStarted: () => void;
   onUploadClick: () => void;
   onLoginClick: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
+  user,
+  onLogout,
   onGetStarted,
   onUploadClick,
   onLoginClick,
@@ -49,17 +54,33 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </nav>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={onLoginClick}
-              className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors"
-            >
-              Log In
-            </button>
+            {user ? (
+              <div className="flex items-center gap-2.5 bg-slate-900/60 border border-slate-800/80 rounded-xl px-3 py-1.5">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#5B5FFF] to-[#38BDF8] flex items-center justify-center text-white text-xs font-bold shadow-sm">
+                  {user.name.charAt(0).toUpperCase()}
+                </div>
+                <span className="text-xs font-medium text-slate-200 hidden sm:inline">{user.name}</span>
+                <button
+                  onClick={onLogout}
+                  className="p-1 rounded-lg text-slate-400 hover:text-rose-400 transition-colors ml-1"
+                  title="Log Out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={onLoginClick}
+                className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors"
+              >
+                Log In
+              </button>
+            )}
             <button
               onClick={onGetStarted}
               className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-[#5B5FFF] to-[#7B61FF] hover:opacity-95 shadow-glow transition-all active:scale-95 flex items-center gap-2"
             >
-              Get Started <ArrowRight className="w-4 h-4" />
+              {user ? 'Open Dashboard' : 'Get Started'} <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
