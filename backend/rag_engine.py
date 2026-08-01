@@ -17,18 +17,9 @@ try:
 except ImportError:
     HAS_PYPDF = False
 
-from database import get_db_connection
 import chromadb
-
-# Initialize ChromaDB persistent client
-CHROMA_DATA_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
-chroma_client = chromadb.PersistentClient(path=CHROMA_DATA_PATH)
-# Use cosine similarity space for matching vectors
-collection = chroma_client.get_or_create_collection(
-    name="libera_chunks",
-    metadata={"hnsw:space": "cosine"}
-)
-
+from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
+from database import get_db_connection
 
 DEFAULT_SYSTEM_PROMPT = """You are Libramind, an AI assistant that answers questions exclusively from the user's uploaded documents.
 
@@ -77,6 +68,34 @@ class SimpleEmbedder:
             v1, v2 = v2, v1
         dot = sum(val * v2.get(key, 0.0) for key, val in v1.items())
         return dot
+
+class LightweightEmbeddingFunction(EmbeddingFunction):
+    """Ultra-lightweight memory-efficient embedding function using n-gram feature hashing (RAM < 50MB)."""
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, input: Documents) -> Embeddings:
+        embeddings = []
+        for text in input:
+            tokens = SimpleEmbedder.tokenize(text)
+            vec = [0.0] * 128
+            for t in tokens:
+                idx = abs(hash(t)) % 128
+                vec[idx] += 1.0
+            norm = math.sqrt(sum(v * v for v in vec)) or 1.0
+            embeddings.append([v / norm for v in vec])
+        return embeddings
+
+lightweight_ef = LightweightEmbeddingFunction()
+
+# Initialize ChromaDB persistent client with lightweight embedding function
+CHROMA_DATA_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
+chroma_client = chromadb.PersistentClient(path=CHROMA_DATA_PATH)
+collection = chroma_client.get_or_create_collection(
+    name="libramind_chunks",
+    embedding_function=lightweight_ef,
+    metadata={"hnsw:space": "cosine"}
+)
 
 def extract_text_from_pdf(filepath: str) -> List[Dict[str, Any]]:
     """
@@ -269,45 +288,65 @@ def retrieve_top_chunks(query: str, user_id: str, top_k: int = 5, filter_book_id
         )
     except Exception as e:
         print(f"Error querying ChromaDB: {e}")
-        return []
-
-    if not results or not results["ids"] or not results["ids"][0]:
-        return []
-
-    ids = results["ids"][0]
-    documents = results["documents"][0]
-    metadatas = results["metadatas"][0]
-    distances = results["distances"][0]
+        results = None
 
     retrieved = []
     query_lower = query.lower()
     keywords = [w for w in re.findall(r'\w+', query_lower) if len(w) > 2]
 
-    for idx in range(len(ids)):
-        chunk_id = ids[idx]
-        text = documents[idx]
-        meta = metadatas[idx]
-        # In cosine space, ChromaDB distance is 1.0 - cosine_similarity
-        similarity = 1.0 - distances[idx] if distances[idx] is not None else 0.0
-        
-        # Keyword match boost
-        keyword_hits = sum(1 for kw in keywords if kw in text.lower())
-        keyword_score = keyword_hits / (len(keywords) or 1)
+    if results and results.get("ids") and results["ids"][0]:
+        ids = results["ids"][0]
+        documents = results["documents"][0]
+        metadatas = results["metadatas"][0]
+        distances = results["distances"][0]
 
-        combined_score = 0.7 * similarity + 0.3 * keyword_score
+        for idx in range(len(ids)):
+            chunk_id = ids[idx]
+            text = documents[idx]
+            meta = metadatas[idx]
+            similarity = 1.0 - distances[idx] if distances[idx] is not None else 0.0
+            
+            keyword_hits = sum(1 for kw in keywords if kw in text.lower())
+            keyword_score = keyword_hits / (len(keywords) or 1)
 
-        book_id = meta["book_id"]
-        book_name = book_id_to_name.get(book_id, "Unknown Book")
+            combined_score = 0.7 * similarity + 0.3 * keyword_score
 
-        retrieved.append({
-            "chunk_id": chunk_id,
-            "book_id": book_id,
-            "book_name": book_name,
-            "page_number": meta["page_number"],
-            "chunk_index": meta["chunk_index"],
-            "text": text,
-            "score": combined_score
-        })
+            book_id = meta["book_id"]
+            book_name = book_id_to_name.get(book_id, "Unknown Book")
+
+            retrieved.append({
+                "chunk_id": chunk_id,
+                "book_id": book_id,
+                "book_name": book_name,
+                "page_number": meta["page_number"],
+                "chunk_index": meta["chunk_index"],
+                "text": text,
+                "score": combined_score
+            })
+
+    # Direct SQLite DB text search fallback if ChromaDB returns no results
+    if not retrieved:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        for b_id in user_book_ids:
+            # Match keywords in chunks table
+            kw_pattern = f"%{keywords[0]}%" if keywords else f"%{query}%"
+            cursor.execute(
+                "SELECT id, book_id, book_name, page_number, chunk_index, text FROM chunks WHERE book_id = ? AND text LIKE ? LIMIT ?",
+                (b_id, kw_pattern, top_k)
+            )
+            rows = cursor.fetchall()
+            for r in rows:
+                retrieved.append({
+                    "chunk_id": r["id"],
+                    "book_id": r["book_id"],
+                    "book_name": r["book_name"],
+                    "page_number": r["page_number"],
+                    "chunk_index": r["chunk_index"],
+                    "text": r["text"],
+                    "score": 0.85
+                })
+        conn.close()
 
     retrieved.sort(key=lambda x: x["score"], reverse=True)
     return retrieved[:top_k]
