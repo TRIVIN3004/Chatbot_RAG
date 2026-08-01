@@ -30,7 +30,7 @@ collection = chroma_client.get_or_create_collection(
 )
 
 
-DEFAULT_SYSTEM_PROMPT = """You are Libera, an AI assistant that answers questions exclusively from the user's uploaded documents.
+DEFAULT_SYSTEM_PROMPT = """You are Libramind, an AI assistant that answers questions exclusively from the user's uploaded documents.
 
 Rules:
 1. Use only the retrieved document context.

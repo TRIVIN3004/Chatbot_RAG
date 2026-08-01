@@ -19,8 +19,8 @@ export function App() {
   const [view, setView] = useState<'landing' | 'dashboard'>('landing');
   const [user, setUser] = useState<User | null>({
     user_id: 'demo-user',
-    name: 'Libera Scholar',
-    email: 'scholar@libera.ai'
+    name: 'Libramind Scholar',
+    email: 'scholar@libramind.ai'
   });
 
   // App Data State
@@ -43,7 +43,7 @@ export function App() {
 
   // Settings State
   const [settings, setSettings] = useState<AppSettings>({
-    theme: 'dark',
+    theme: 'light',
     language: 'en',
     embeddingModel: 'BAAI/bge-small-en-v1.5',
     chunkSize: 800,
@@ -51,7 +51,7 @@ export function App() {
     llmModel: 'llama-3.3-70b-versatile',
     vectorDb: 'ChromaDB',
     apiKey: '',
-    systemPrompt: `You are Libera, an AI assistant that answers questions exclusively from the user's uploaded documents.
+    systemPrompt: `You are Libramind, an AI assistant that answers questions exclusively from the user's uploaded documents.
 Rules:
 1. Use only the retrieved document context.
 2. Never use outside knowledge.

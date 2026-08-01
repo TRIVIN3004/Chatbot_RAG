@@ -75,7 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           {!isCollapsed && (
             <div>
-              <h1 className="text-lg font-bold text-white tracking-tight leading-none">Libera</h1>
+              <h1 className="text-lg font-bold text-white tracking-tight leading-none">Libramind</h1>
               <span className="text-[10px] text-[#38BDF8] font-medium tracking-wide">RAG ASSISTANT</span>
             </div>
           )}

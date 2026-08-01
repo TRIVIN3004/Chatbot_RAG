@@ -41,7 +41,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </div>
             <div>
               <span className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                Libera <span className="text-xs px-2 py-0.5 rounded-full bg-[#5B5FFF]/20 border border-[#5B5FFF]/40 text-[#38BDF8]">RAG v1.0</span>
+                Libramind <span className="text-xs px-2 py-0.5 rounded-full bg-[#5B5FFF]/20 border border-[#5B5FFF]/40 text-[#38BDF8]">RAG v1.0</span>
               </span>
             </div>
           </div>

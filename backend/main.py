@@ -29,7 +29,7 @@ env_dict = dotenv_values(env_file_path)
 GOOGLE_CLIENT_ID = env_dict.get("GOOGLE_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID")
 
 
-app = FastAPI(title="Libera RAG Backend", version="1.0.0")
+app = FastAPI(title="Libramind RAG Backend", version="1.0.0")
 
 # Setup CORS
 app.add_middleware(
@@ -81,7 +81,7 @@ COVER_COLORS = [
 
 @app.get("/")
 def read_root():
-    return {"message": "Libera RAG API is running smoothly."}
+    return {"message": "Libramind RAG API is running smoothly."}
 
 # AUTH ENDPOINTS
 @app.post("/api/auth/signup")
@@ -202,7 +202,7 @@ def get_settings(user_id: str = "demo-user"):
     if not row:
         # Default settings insert
         default_system_prompt = (
-            "You are Libera, an AI assistant that answers questions exclusively from the user's uploaded documents.\n"
+            "You are Libramind, an AI assistant that answers questions exclusively from the user's uploaded documents.\n"
             "Rules:\n"
             "1. Use only the retrieved document context.\n"
             "2. Never use outside knowledge.\n"
