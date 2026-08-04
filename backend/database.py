@@ -6,7 +6,8 @@ import time
 DB_FILE = os.path.join(os.path.dirname(__file__), "libera.db")
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_FILE, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
     conn.row_factory = sqlite3.Row
     return conn
 

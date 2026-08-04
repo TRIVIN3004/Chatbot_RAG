@@ -34,10 +34,6 @@ export const BookManagementModal: React.FC<BookManagementModalProps> = ({
 
   const handleFileChange = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    if (books.length >= 4) {
-      setErrorMsg('Maximum limit of 4 books reached. Please delete an existing book first.');
-      return;
-    }
 
     const file = files[0];
     if (!file.name.match(/\.(pdf|docx|txt)$/i)) {
@@ -79,23 +75,19 @@ export const BookManagementModal: React.FC<BookManagementModalProps> = ({
           </div>
           <div>
             <h2 className="text-xl font-bold text-white">Book Management</h2>
-            <p className="text-xs text-slate-400">Upload up to 4 PDF books for RAG vector embedding</p>
+            <p className="text-xs text-slate-400">Upload unlimited PDF books for RAG vector embedding</p>
           </div>
         </div>
 
-        {/* Counter Progress Bar */}
-        <div className="mb-6 p-4 rounded-xl glass-panel border border-slate-800">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-2">
-            <span>Limit Status: {books.length} / 4 Books Uploaded</span>
-            <span className="text-[#38BDF8]">{4 - books.length} Slots Available</span>
+        {/* Counter Info Banner */}
+        <div className="mb-6 p-4 rounded-xl glass-panel border border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Storage Status: {books.length} {books.length === 1 ? 'Book' : 'Books'} Uploaded</span>
           </div>
-
-          <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-[#5B5FFF] to-[#38BDF8] h-full rounded-full transition-all duration-300"
-              style={{ width: `${(books.length / 4) * 100}%` }}
-            />
-          </div>
+          <span className="text-xs font-semibold text-[#38BDF8] px-2.5 py-1 rounded-full bg-[#38BDF8]/10 border border-[#38BDF8]/20">
+            Unlimited Uploads
+          </span>
         </div>
 
         {errorMsg && (
@@ -106,33 +98,31 @@ export const BookManagementModal: React.FC<BookManagementModalProps> = ({
         )}
 
         {/* Drag & Drop Upload Zone */}
-        {books.length < 4 && (
-          <div
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setIsDragging(false);
-              handleFileChange(e.dataTransfer.files);
-            }}
-            className={`mb-6 p-6 rounded-2xl border-2 border-dashed transition-all text-center flex flex-col items-center justify-center cursor-pointer ${isDragging ? 'border-[#5B5FFF] bg-[#5B5FFF]/10' : 'border-slate-700 hover:border-[#5B5FFF]/50 bg-slate-900/40'}`}
-          >
-            <input
-              type="file"
-              accept=".pdf,.docx,.txt"
-              onChange={(e) => handleFileChange(e.target.files)}
-              className="hidden"
-              id="file-upload-input"
-            />
-            <label htmlFor="file-upload-input" className="cursor-pointer flex flex-col items-center">
-              <div className="w-12 h-12 rounded-2xl bg-[#5B5FFF]/20 border border-[#5B5FFF]/40 flex items-center justify-center text-[#38BDF8] mb-2 shadow-glow">
-                <UploadCloud className="w-6 h-6" />
-              </div>
-              <span className="text-sm font-semibold text-white">Click or Drag & Drop PDF Book</span>
-              <span className="text-xs text-slate-400 mt-1">Supports PDF, DOCX, TXT (800-char vector chunking)</span>
-            </label>
-          </div>
-        )}
+        <div
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            handleFileChange(e.dataTransfer.files);
+          }}
+          className={`mb-6 p-6 rounded-2xl border-2 border-dashed transition-all text-center flex flex-col items-center justify-center cursor-pointer ${isDragging ? 'border-[#5B5FFF] bg-[#5B5FFF]/10' : 'border-slate-700 hover:border-[#5B5FFF]/50 bg-slate-900/40'}`}
+        >
+          <input
+            type="file"
+            accept=".pdf,.docx,.txt"
+            onChange={(e) => handleFileChange(e.target.files)}
+            className="hidden"
+            id="file-upload-input"
+          />
+          <label htmlFor="file-upload-input" className="cursor-pointer flex flex-col items-center">
+            <div className="w-12 h-12 rounded-2xl bg-[#5B5FFF]/20 border border-[#5B5FFF]/40 flex items-center justify-center text-[#38BDF8] mb-2 shadow-glow">
+              <UploadCloud className="w-6 h-6" />
+            </div>
+            <span className="text-sm font-semibold text-white">Click or Drag & Drop PDF Book</span>
+            <span className="text-xs text-slate-400 mt-1">Supports PDF, DOCX, TXT (800-char vector chunking)</span>
+          </label>
+        </div>
 
         {/* Book List Grid */}
         <div className="flex-1 overflow-y-auto space-y-3 pr-1">

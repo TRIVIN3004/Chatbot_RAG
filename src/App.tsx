@@ -73,6 +73,18 @@ Rules:
     });
   }, [user?.user_id]);
 
+  // Periodic polling while books are uploading/processing
+  useEffect(() => {
+    const isProcessing = books.some(b => b.status === 'Processing' || b.status === 'Embedding' || b.status === 'Uploading');
+    if (!isProcessing) return;
+
+    const interval = setInterval(() => {
+      fetchBooks(user?.user_id).then(setBooks);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [books, user?.user_id]);
+
   // Theme Toggler effect
   useEffect(() => {
     if (settings.theme === 'dark') {

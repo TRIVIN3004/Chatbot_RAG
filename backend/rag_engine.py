@@ -17,6 +17,20 @@ try:
 except ImportError:
     HAS_PYPDF = False
 
+try:
+    import fitz
+    HAS_FITZ = True
+except ImportError:
+    HAS_FITZ = False
+
+try:
+    from rapidocr_onnxruntime import RapidOCR
+    import numpy as np
+    ocr_engine = RapidOCR()
+    HAS_RAPID_OCR = True
+except Exception as _ocr_e:
+    HAS_RAPID_OCR = False
+
 import chromadb
 from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
 from database import get_db_connection
@@ -100,10 +114,30 @@ collection = chroma_client.get_or_create_collection(
 def extract_text_from_pdf(filepath: str) -> List[Dict[str, Any]]:
     """
     Extracts text per page from a PDF file.
+    Supports PyMuPDF (fitz), pypdf, and OCR fallback (rapidocr_onnxruntime) for scanned books.
     Returns list of dicts: [{'page': 1, 'text': '...'}, ...]
     """
     pages_data = []
-    if HAS_PYPDF:
+
+    # 1. Try PyMuPDF (fitz) text extraction first (faster and handles complex layouts)
+    if HAS_FITZ:
+        try:
+            doc = fitz.open(filepath)
+            for idx, page in enumerate(doc):
+                text = page.get_text() or ""
+                pages_data.append({
+                    "page": idx + 1,
+                    "text": text.strip()
+                })
+            total_chars = sum(len(p["text"]) for p in pages_data)
+            if total_chars > 200:
+                return pages_data
+        except Exception as e:
+            print(f"PyMuPDF text extraction failed: {e}")
+            pages_data = []
+
+    # 2. Try pypdf text extraction
+    if HAS_PYPDF and not pages_data:
         try:
             reader = PdfReader(filepath)
             for idx, page in enumerate(reader.pages):
@@ -112,10 +146,58 @@ def extract_text_from_pdf(filepath: str) -> List[Dict[str, Any]]:
                     "page": idx + 1,
                     "text": text.strip()
                 })
-            if pages_data:
+            total_chars = sum(len(p["text"]) for p in pages_data)
+            if total_chars > 200:
                 return pages_data
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"pypdf text extraction failed: {e}")
+            pages_data = []
+
+    # 3. Fallback: OCR for scanned PDFs if extracted text is empty or very minimal
+    if HAS_FITZ and HAS_RAPID_OCR:
+        print(f"Scanned document detected for {os.path.basename(filepath)}. Starting parallel RapidOCR extraction...")
+        try:
+            import concurrent.futures
+            doc = fitz.open(filepath)
+            total_pages = len(doc)
+            page_pixmaps = []
+            for idx, page in enumerate(doc):
+                pix = page.get_pixmap(dpi=100)
+                img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape((pix.height, pix.width, pix.n))
+                if pix.n == 4:
+                    img_np = img_np[:, :, :3]
+                page_pixmaps.append((idx + 1, img_np))
+
+            def _ocr_page(item):
+                p_num, img = item
+                try:
+                    engine = RapidOCR()
+                    res, _ = engine(img)
+                    p_text = ""
+                    if res:
+                        p_text = " ".join([it[1] for it in res if it[1]])
+                    return {"page": p_num, "text": p_text.strip()}
+                except Exception:
+                    return {"page": p_num, "text": ""}
+
+            ocr_pages = [None] * total_pages
+            workers = min(16, (os.cpu_count() or 4) * 2)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(_ocr_page, item): item[0] - 1 for item in page_pixmaps}
+                completed = 0
+                for future in concurrent.futures.as_completed(futures):
+                    p_idx = futures[future]
+                    ocr_pages[p_idx] = future.result()
+                    completed += 1
+                    if completed % 25 == 0 or completed == total_pages:
+                        print(f"Parallel OCR Progress: {completed}/{total_pages} pages completed.")
+
+            ocr_pages = [p for p in ocr_pages if p is not None]
+            total_chars = sum(len(p["text"]) for p in ocr_pages)
+            if total_chars > 50:
+                return ocr_pages
+        except Exception as e:
+            print(f"RapidOCR extraction failed: {e}")
 
     # Fallback for plain text, docx, or raw PDF text extraction
     with open(filepath, "rb") as f:
@@ -130,13 +212,14 @@ def extract_text_from_pdf(filepath: str) -> List[Dict[str, Any]]:
 
     char_per_page = 1500
     total_pages = math.ceil(len(full_text) / char_per_page) or 1
+    fallback_pages = []
     for p in range(total_pages):
         p_text = full_text[p*char_per_page : (p+1)*char_per_page]
-        pages_data.append({
+        fallback_pages.append({
             "page": p + 1,
             "text": p_text.strip()
         })
-    return pages_data
+    return fallback_pages
 
 def chunk_pages(pages_data: List[Dict[str, Any]], chunk_size: int = 800, chunk_overlap: int = 150) -> List[Dict[str, Any]]:
     """
@@ -424,10 +507,10 @@ def generate_rag_answer(
     for idx, c in enumerate(relevant_chunks):
         context_str += f"--- CONTEXT CHUNK {idx+1} (Source: {c['book_name']}, Page: {c['page_number']}) ---\n{c['text']}\n\n"
 
-    # Map/Clean model name
+    # Map/Clean model name - prefer ultra-fast 8b model
     model = (llm_model or "").strip()
-    if not model or model in ["GPT-4.1 / GPT-5 Compatible", "Local Llama 3.1 8B"]:
-        model = "llama-3.3-70b-versatile"
+    if not model or model in ["GPT-4.1 / GPT-5 Compatible", "Local Llama 3.1 8B", "llama-3.3-70b-versatile"]:
+        model = "llama-3.1-8b-instant"
 
     # Call Groq API using HTTP requests
     import requests
@@ -459,7 +542,7 @@ def generate_rag_answer(
     }
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=25)
+        response = requests.post(url, json=payload, headers=headers, timeout=6)
         if response.status_code == 200:
             res_data = response.json()
             answer_text = res_data["choices"][0]["message"]["content"]

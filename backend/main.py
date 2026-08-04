@@ -280,12 +280,9 @@ async def upload_book(
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Check maximum 4 books limit
+    # Get book count for color assignment
     cursor.execute("SELECT COUNT(*) as count FROM books WHERE user_id = ?", (user_id,))
     count = cursor.fetchone()["count"]
-    if count >= 4:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Maximum limit of 4 books reached. Please delete an existing book to upload a new one.")
 
     book_id = str(uuid.uuid4())
     filename = file.filename
@@ -389,12 +386,34 @@ def reindex_book(book_id: str, background_tasks: BackgroundTasks, user_id: str =
 def get_book_file(book_id: str):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT filepath, filename FROM books WHERE id = ?", (book_id,))
+    cursor.execute("SELECT filepath, filename, name FROM books WHERE id = ?", (book_id,))
     row = cursor.fetchone()
     conn.close()
-    if not row or not os.path.exists(row["filepath"]):
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(row["filepath"], filename=row["filename"], media_type="application/pdf")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Book record not found")
+
+    filepath = row["filepath"]
+    filename = row["filename"]
+
+    # 1. Check exact path in DB
+    if not os.path.exists(filepath):
+        # 2. Check backend/uploads folder
+        alt1 = os.path.join(UPLOAD_DIR, f"{book_id}_{filename}")
+        alt2 = os.path.join(UPLOAD_DIR, filename)
+        # 3. Check workspace root folder
+        alt3 = os.path.join(os.path.dirname(os.path.dirname(__file__)), filename)
+
+        if os.path.exists(alt1):
+            filepath = alt1
+        elif os.path.exists(alt2):
+            filepath = alt2
+        elif os.path.exists(alt3):
+            filepath = alt3
+        else:
+            raise HTTPException(status_code=404, detail=f"File '{filename}' not found on server")
+
+    return FileResponse(filepath, media_type="application/pdf", content_disposition_type="inline")
 
 @app.get("/api/books/{book_id}/page/{page_number}")
 def get_book_page_text(book_id: str, page_number: int):

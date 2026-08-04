@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  X, ChevronLeft, ChevronRight, BookOpen, Search, 
-  Download, ZoomIn, ZoomOut, FileText, Layers
+  X, ChevronLeft, ChevronRight, BookOpen, Download, FileText
 } from 'lucide-react';
 import type { Book } from '../types';
 
@@ -19,15 +18,13 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
   initialPage = 1
 }) => {
   const [currentPage, setCurrentPage] = useState(initialPage);
-  const [zoom, setZoom] = useState(100);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'pdf' | 'text'>('pdf');
+  const [pageChunks, setPageChunks] = useState<string[]>([]);
+  const [isLoadingText, setIsLoadingText] = useState(false);
 
-  if (!isOpen || !book) return null;
-
-  const totalPages = book.pages || 100;
-
-  const handlePrev = () => setCurrentPage(p => Math.max(1, p - 1));
-  const handleNext = () => setCurrentPage(p => Math.min(totalPages, p + 1));
+  useEffect(() => {
+    setCurrentPage(initialPage);
+  }, [initialPage, book?.id]);
 
   const getApiBaseUrl = () => {
     const envUrl = import.meta.env.VITE_API_BASE_URL;
@@ -37,6 +34,31 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
     return 'http://localhost:8000';
   };
 
+  // Fetch extracted page text dynamically when page changes
+  useEffect(() => {
+    if (!book || !isOpen) return;
+
+    setIsLoadingText(true);
+    fetch(`${getApiBaseUrl()}/api/books/${book.id}/page/${currentPage}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.chunks)) {
+          setPageChunks(data.chunks.map((c: any) => c.text));
+        } else {
+          setPageChunks([]);
+        }
+      })
+      .catch(() => setPageChunks([]))
+      .finally(() => setIsLoadingText(false));
+  }, [book, currentPage, isOpen]);
+
+  if (!isOpen || !book) return null;
+
+  const totalPages = book.pages || 100;
+
+  const handlePrev = () => setCurrentPage(p => Math.max(1, p - 1));
+  const handleNext = () => setCurrentPage(p => Math.min(totalPages, p + 1));
+
   const pdfFileUrl = `${getApiBaseUrl()}/api/books/${book.id}/file#page=${currentPage}`;
 
   return (
@@ -44,7 +66,7 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
       <div className="w-full max-w-5xl h-[96vh] sm:h-[90vh] rounded-xl sm:rounded-2xl glass-panel border border-slate-700/80 shadow-2xl flex flex-col overflow-hidden relative">
         
         {/* Top Control Bar */}
-        <div className="px-3 sm:px-6 py-2.5 sm:py-4 bg-[#0B1120] border-b border-slate-800 flex items-center justify-between gap-2 sm:gap-4">
+        <div className="px-3 sm:px-6 py-2.5 sm:py-4 bg-[#0B1120] border-b border-slate-800 flex items-center justify-between gap-2 sm:gap-4 flex-wrap sm:flex-nowrap">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <div
               className="w-7 h-9 sm:w-8 sm:h-10 rounded flex items-center justify-center text-white font-mono text-[9px] sm:text-[10px] font-bold shadow flex-shrink-0"
@@ -58,6 +80,28 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
                 {book.pages > 0 ? `${book.pages} Pages` : 'Ready'}
               </span>
             </div>
+          </div>
+
+          {/* View Toggle */}
+          <div className="flex items-center bg-slate-900 p-1 rounded-lg border border-slate-800 text-xs">
+            <button
+              onClick={() => setActiveTab('pdf')}
+              className={`px-3 py-1 rounded-md transition-colors flex items-center gap-1.5 font-medium ${
+                activeTab === 'pdf' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>PDF Viewer</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('text')}
+              className={`px-3 py-1 rounded-md transition-colors flex items-center gap-1.5 font-medium ${
+                activeTab === 'text' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Extracted Text</span>
+            </button>
           </div>
 
           {/* Page Navigator */}
@@ -109,13 +153,38 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
           </div>
         </div>
 
-        {/* PDF Viewport */}
-        <div className="flex-1 overflow-hidden bg-slate-950 p-1 sm:p-3 flex justify-center items-center">
-          <iframe
-            src={pdfFileUrl}
-            className="w-full h-full rounded-lg sm:rounded-xl border border-slate-800 bg-white shadow-2xl"
-            title={book.name}
-          />
+        {/* Viewport */}
+        <div className="flex-1 overflow-hidden bg-slate-950 p-2 sm:p-4 flex justify-center items-center">
+          {activeTab === 'pdf' ? (
+            <iframe
+              src={pdfFileUrl}
+              className="w-full h-full rounded-lg sm:rounded-xl border border-slate-800 bg-white shadow-2xl"
+              title={book.name}
+            />
+          ) : (
+            <div className="w-full h-full overflow-y-auto rounded-lg sm:rounded-xl border border-slate-800 bg-slate-900/90 p-4 sm:p-8 text-slate-200">
+              <div className="max-w-3xl mx-auto space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h4 className="text-sm font-semibold text-indigo-400">Page {currentPage} Content Excerpts</h4>
+                  <span className="text-xs text-slate-500">{pageChunks.length} chunk(s) indexed</span>
+                </div>
+                
+                {isLoadingText ? (
+                  <div className="py-12 text-center text-slate-500 text-sm animate-pulse">Loading page text...</div>
+                ) : pageChunks.length > 0 ? (
+                  pageChunks.map((chunkText, idx) => (
+                    <div key={idx} className="p-4 rounded-lg bg-slate-950/60 border border-slate-800/80 text-sm leading-relaxed whitespace-pre-wrap font-sans text-slate-300">
+                      {chunkText}
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-12 text-center text-slate-500 text-sm">
+                    No extracted text chunks found for Page {currentPage}.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

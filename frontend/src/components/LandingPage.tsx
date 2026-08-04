@@ -114,7 +114,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           transition={{ duration: 0.6, delay: 0.2 }}
           className="mt-6 text-lg md:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed"
         >
-          Upload up to 4 textbooks or research PDFs. Libera chunks, embeds, and retrieves exact page & paragraph citations for answers strictly grounded in your documents.
+          Upload unlimited textbooks or research PDFs. Libera chunks, embeds, and retrieves exact page & paragraph citations for answers strictly grounded in your documents.
         </motion.p>
 
         {/* CTA Buttons */}
@@ -149,7 +149,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-4 text-left"
         >
           {[
-            { icon: FileText, title: "PDF & DOCX Upload", desc: "Process up to 4 books with page metadata" },
+            { icon: FileText, title: "PDF & DOCX Upload", desc: "Process unlimited books with page metadata" },
             { icon: Database, title: "Vector Embeddings", desc: "800-char chunks & BAAI/bge vector index" },
             { icon: ShieldCheck, title: "No Hallucinations", desc: "Answers derived strictly from document context" },
             { icon: BookMarked, title: "Page Citations", desc: "Clickable book, page & paragraph sources" },

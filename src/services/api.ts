@@ -126,14 +126,7 @@ export async function uploadBookFile(file: File, userId: string = 'demo-user'): 
       throw new Error(err.detail || 'Upload failed');
     }
   } catch (e: any) {
-    if (e.message && e.message.includes('Maximum limit')) {
-      throw e;
-    }
     const currentBooks = await fetchBooks(userId);
-    if (currentBooks.length >= 4) {
-      throw new Error('Maximum limit of 4 books reached. Delete a book to upload a new one.');
-    }
-
     const cleanName = file.name.replace(/\.[^/.]+$/, "");
     const colors = [
       'linear-gradient(135deg, #EC4899 0%, #F472B6 100%)',

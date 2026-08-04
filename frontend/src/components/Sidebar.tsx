@@ -99,7 +99,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="mx-3 my-2 p-3 rounded-xl glass-panel border border-slate-800">
           <div className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-2">
             <span className="flex items-center gap-1.5 text-white">
-              <BookMarked className="w-3.5 h-3.5 text-[#38BDF8]" /> Books ({books.length}/4)
+              <BookMarked className="w-3.5 h-3.5 text-[#38BDF8]" /> Books ({books.length})
             </span>
             <button
               onClick={onOpenBooksModal}
@@ -107,13 +107,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               Manage
             </button>
-          </div>
-
-          <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden mb-2">
-            <div
-              className="bg-gradient-to-r from-[#5B5FFF] to-[#38BDF8] h-full rounded-full transition-all duration-300"
-              style={{ width: `${(books.length / 4) * 100}%` }}
-            />
           </div>
 
           <div className="space-y-1">
@@ -126,11 +119,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
       ) : (
-        <div className="flex justify-center my-2">
+        <div className="flex justify-center my-2 flex-shrink-0">
           <button
             onClick={onOpenBooksModal}
             className="p-2.5 rounded-xl glass-panel border border-slate-800 text-slate-300 hover:text-white"
-            title={`Uploaded Books (${books.length}/4)`}
+            title={`Uploaded Books (${books.length})`}
           >
             <BookMarked className="w-5 h-5 text-[#38BDF8]" />
           </button>
